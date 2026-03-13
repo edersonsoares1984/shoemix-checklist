@@ -814,17 +814,6 @@
     border: 2px solid rgba(232,184,75,0.3);
     flex-shrink: 0;
   }
-  .foto-thumb-wrap::after {
-    content: '📷';
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%,-50%);
-    font-size: 20px;
-    pointer-events: none;
-    opacity: 0;
-  }
-  .foto-thumb-wrap.foto-erro::after { opacity: 1; }
-  .foto-thumb-wrap.foto-erro .foto-thumb { opacity: 0; }
   .foto-thumb {
     width: 100%; height: 100%;
     object-fit: cover;
@@ -2569,26 +2558,12 @@ function adicionarFotos(id, input) {
   let pendentes = files.length;
   if (pendentes === 0) return;
 
-  function finalizarFoto(dataUrl) {
-    if (dataUrl) fotos[id].push(dataUrl);
-    pendentes--;
-    if (pendentes === 0) {
-      const baseId = id.replace(/_d[12]$/, '');
-      const el = document.getElementById(`item-${baseId}`);
-      const item = encontrarItem(id);
-      if (el && item) el.innerHTML = buildItem(item);
-      autoSave();
-    }
-  }
-
   files.forEach(file => {
-    // Usa URL.createObjectURL — leve, não carrega tudo na RAM de uma vez
-    // Funciona em qualquer Android Chrome moderno
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      try {
+    const reader = new FileReader();
+    reader.onload = e => {
+      // Reduz a imagem antes de salvar (max 800px lado maior)
+      const img = new Image();
+      img.onload = () => {
         const MAX = 800;
         let w = img.width, h = img.height;
         if (w > MAX || h > MAX) {
@@ -2597,39 +2572,21 @@ function adicionarFotos(id, input) {
         }
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('no ctx');
-        ctx.drawImage(img, 0, 0, w, h);
-        const data = canvas.toDataURL('image/jpeg', 0.72);
-        // Valida: base64 real começa com data:image e tem tamanho mínimo
-        if (!data || !data.startsWith('data:image') || data.length < 1000) throw new Error('invalid');
-        // Valida renderizando em img temporário antes de aceitar
-        const teste = new Image();
-        teste.onload = () => finalizarFoto(data);
-        teste.onerror = () => {
-          // Canvas gerou base64 inválido — usa FileReader direto
-          const reader = new FileReader();
-          reader.onload = e => finalizarFoto(e.target.result);
-          reader.onerror = () => finalizarFoto(null);
-          reader.readAsDataURL(file);
-        };
-        teste.src = data;
-      } catch(err) {
-        const reader = new FileReader();
-        reader.onload = e => finalizarFoto(e.target.result);
-        reader.onerror = () => finalizarFoto(null);
-        reader.readAsDataURL(file);
-      }
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        fotos[id].push(canvas.toDataURL('image/jpeg', 0.75));
+        pendentes--;
+        if (pendentes === 0) {
+          // Para slots _d1/_d2 o elemento pai é item-baseId
+          const baseId = id.replace(/_d[12]$/, '');
+          const el = document.getElementById(`item-${baseId}`);
+          const item = encontrarItem(id);
+          if (el && item) el.innerHTML = buildItem(item);
+          autoSave();
+        }
+      };
+      img.src = e.target.result;
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      // Se objectUrl falhar, tenta FileReader direto
-      const reader = new FileReader();
-      reader.onload = e => finalizarFoto(e.target.result);
-      reader.onerror = () => finalizarFoto(null);
-      reader.readAsDataURL(file);
-    };
-    img.src = objectUrl;
+    reader.readAsDataURL(file);
   });
   input.value = '';
 }
@@ -4594,14 +4551,6 @@ function reabrirUltimoPDF() {
 document.getElementById('login-date').textContent = formatDate(new Date());
 if (document.getElementById('login-date-ret'))
   document.getElementById('login-date-ret').textContent = formatDate(new Date());
-
-// Handler global para thumbnails com imagem quebrada
-document.addEventListener('error', function(e) {
-  if (e.target && e.target.classList && e.target.classList.contains('foto-thumb')) {
-    const wrap = e.target.closest('.foto-thumb-wrap');
-    if (wrap) wrap.classList.add('foto-erro');
-  }
-}, true);
 
 window.addEventListener('load', () => {
   // Migração: apaga snapshots antigos sem campo 'justif' para forçar regeneração com dados completos
